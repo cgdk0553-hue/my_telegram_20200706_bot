@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 from openai import OpenAI
@@ -18,7 +19,7 @@ client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 # ユーザーごとのタスクを保存する辞書
 user_tasks = {}
 
-# /start コマンドの処理
+# --- コマンドの処理 ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
         return
@@ -30,7 +31,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/ai [質問] : AIに質問"
     )
 
-# メッセージ返信の処理 (オウム返し)
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
         return
@@ -99,20 +99,36 @@ async def ask_ai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"AI処理中にエラーが発生しました: {str(e)}")
 
-if __name__ == '__main__':
+# --- メイン処理 (Python 3.12+ 対応) ---
+async def main():
     app = ApplicationBuilder().token(TOKEN).build()
     
     # ハンドラーの登録
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), echo))
-    
-    # タスク管理ハンドラー
     app.add_handler(CommandHandler("todo", add_todo))
     app.add_handler(CommandHandler("list", list_todos))
     app.add_handler(CommandHandler("clear", clear_todos))
-    
-    # AIハンドラー
     app.add_handler(CommandHandler("ai", ask_ai))
     
-    print("Bot started...")
-    app.run_polling()
+    # ボットを起動
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    
+    print("Bot started... (Ctrl+C で停止)")
+    
+    # 停止信号を待つ
+    stop_event = asyncio.Event()
+    try:
+        await stop_event.wait()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        await app.updater.stop()
+        await app.stop()
+        await app.shutdown()
+
+if __name__ == '__main__':
+    # asyncio.run() を使ってイベントループを安全に起動
+    asyncio.run(main())
