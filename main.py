@@ -1,8 +1,8 @@
 import os
 import logging
-import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from openai import OpenAI
 
 # ログ設定
 logging.basicConfig(level=logging.INFO)
@@ -10,6 +10,10 @@ logging.basicConfig(level=logging.INFO)
 # 環境変数のセット
 TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "123456789"))
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+
+# OpenAI クライアントの初期化
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # ユーザーごとのタスクを保存する辞書
 user_tasks = {}
@@ -17,7 +21,12 @@ user_tasks = {}
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
         return
-    await update.message.reply_text("こんにちは！あなた専用のBotです。\n/todo [内容] でタスク追加、/search [キーワード] で情報収集ができます。")
+    await update.message.reply_text(
+        "こんにちは！あなた専用のBotです。\n"
+        "/todo [内容] : タスク追加\n"
+        "/list : タスク一覧\n"
+        "/ai [質問] : AIに質問・情報収集"
+    )
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
@@ -59,38 +68,39 @@ async def clear_todos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del user_tasks[user_id]
     await update.message.reply_text("🗑️ すべてのタスクを削除しました。")
 
-# --- AI情報収集機能 (Web検索) ---
-async def search_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# --- AI情報収集機能 ---
+async def ask_ai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
         return
     
     query = " ".join(context.args)
     if not query:
-        await update.message.reply_text("検索したいキーワードを入力してください。\n例: /search Telegram bot 作り方")
+        await update.message.reply_text("AIに聞きたいことを入力してください。\n例: /ai テレグラムボットの作り方")
         return
 
-    await update.message.reply_text(f"🔍 '{query}' について検索中...")
-    
-    try:
-        # DuckDuckGoのHTML版から簡易的にタイトルとリンクを取得する例
-        # 本格的なAI検索には SerpAPI や Google Custom Search API の利用を推奨します
-        url = f"https://html.duckduckgo.com/html/?q={query}"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers)
-        
-        # 簡易的なパース（実際は BeautifulSoup などを使うと正確です）
-        # ここではデモ用に固定メッセージを返すか、または簡単なスクレイピング結果を表示
-        # 注意: 実際のプロダクトでは公式APIを使うのが安全です
-        result_snippet = f"『{query}』に関する最新の情報が見つかりました。（※現在はデモ用のプレースホルダーです）\n\n本格的な検索機能を実装するには、Google Custom Search APIなどのキー設定が必要です。"
-        
-        await update.message.reply_text(result_snippet)
+    if not OPENAI_API_KEY:
+        await update.message.reply_text("⚠️ OpenAI APIキーが設定されていません。")
+        return
 
+    try:
+        # ChatGPT (gpt-4o-mini) に質問を送信
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "あなたはTelegramで使える便利なアシスタントです。簡潔かつ分かりやすく回答してください。"},
+                {"role": "user", "content": query}
+            ]
+        )
+        answer = completion.choices[0].message.content
+        await update.message.reply_text(answer)
+        
     except Exception as e:
-        await update.message.reply_text(f"検索中にエラーが発生しました: {str(e)}")
+        await update.message.reply_text(f"AI処理中にエラーが発生しました: {str(e)}")
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).build()
     
+    # ハンドラーの登録
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), echo))
     
@@ -99,8 +109,8 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("list", list_todos))
     app.add_handler(CommandHandler("clear", clear_todos))
     
-    # 情報収集ハンドラー
-    app.add_handler(CommandHandler("search", search_info))
+    # AIハンドラー
+    app.add_handler(CommandHandler("ai", ask_ai))
     
     print("Bot started...")
     app.run_polling()
