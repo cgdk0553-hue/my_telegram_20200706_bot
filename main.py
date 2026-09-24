@@ -13,11 +13,12 @@ ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "123456789"))
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 # OpenAI クライアントの初期化
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 # ユーザーごとのタスクを保存する辞書
 user_tasks = {}
 
+# /start コマンドの処理
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
         return
@@ -25,9 +26,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "こんにちは！あなた専用のBotです。\n"
         "/todo [内容] : タスク追加\n"
         "/list : タスク一覧\n"
-        "/ai [質問] : AIに質問・情報収集"
+        "/clear : タスク全削除\n"
+        "/ai [質問] : AIに質問"
     )
 
+# メッセージ返信の処理 (オウム返し)
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ALLOWED_USER_ID:
         return
@@ -78,12 +81,11 @@ async def ask_ai(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("AIに聞きたいことを入力してください。\n例: /ai テレグラムボットの作り方")
         return
 
-    if not OPENAI_API_KEY:
+    if not client:
         await update.message.reply_text("⚠️ OpenAI APIキーが設定されていません。")
         return
 
     try:
-        # ChatGPT (gpt-4o-mini) に質問を送信
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
