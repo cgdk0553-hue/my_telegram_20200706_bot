@@ -24,9 +24,11 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).build()
-    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), echo))
-    
     print("Bot started...")
-    app.run_polling()
+
+# ここから下はインデントが外れていて if ブロックの外(でも直接実行時は結局動く)
+import os
+port = int(os.environ.get("PORT", 8080))  # portは取得しているだけで未使用
+app.run_polling()
